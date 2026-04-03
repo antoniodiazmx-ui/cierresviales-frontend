@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control - Cierres Viales</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, sans-serif; }
+        #map { height: 100%; width: 100%; display: none; }
+        
+        /* Pantalla de Login */
+        #login-screen { position: absolute; inset: 0; background: #f3f4f6; display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .login-box { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 320px; text-align: center; }
+        .login-box input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        .btn { background: #ea580c; color: white; border: none; padding: 12px; width: 100%; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        
+        /* Modal de Detalles del Evento */
+        #event-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 300px; }
+        .modal-content input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        .modal-content label { font-size: 12px; font-weight: bold; color: #555; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-box">
+            <h2>Acceso Restringido</h2>
+            <input type="email" id="email" placeholder="Correo electrónico" value="antoniodiazmx@gmail.com">
+            <input type="password" id="password" placeholder="Contraseña">
+            <button class="btn" onclick="login()">Entrar al Panel</button>
+            <p id="login-error" style="color: red; font-size: 12px; display: none;">Credenciales incorrectas</p>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="event-modal">
+        <div class="modal-content">
+            <h3>Programar Cierre</h3>
+            <label>Nombre (Ej: Procesión del Silencio)</label>
+            <input type="text" id="ev-nombre" placeholder="Nombre del evento">
+            
+            <label>Inicio del cierre</label>
+            <input type="datetime-local" id="ev-inicio">
+            
+            <label>Fin del cierre</label>
+            <input type="datetime-local" id="ev-fin">
+            
+            <button class="btn" onclick="guardarEvento()">GUARDAR EN EL MAPA</button>
+            <button class="btn" style="background: #888; margin-top: 10px;" onclick="cancelarDibujo()">Cancelar</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        const sb = supabase.createClient('https://zlqpmhzzkdtexdxhsdft.supabase.co', 'TU_PUBLISHABLE_KEY_AQUI');
+        
+        let map, drawnItems, tempLayer;
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            const { data, error } = await sb.auth.signInWithPassword({ email, password });
+            
+            if (error) {
+                document.getElementById('login-error').style.display = 'block';
+            } else {
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('map').style.display = 'block';
+                iniciarMapa();
+            }
+        }
+
+        function iniciarMapa() {
+            map = L.map('map').setView([17.0605, -96.7251], 15);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+            // Capa para guardar los dibujos
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+
+            // Control de herramientas de dibujo (Solo polígonos)
+            const drawControl = new L.Control.Draw({
+                draw: {
+                    polygon: { shapeOptions: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.4 } },
+                    polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
+                },
+                edit: { featureGroup: drawnItems, remove: true }
+            });
+            map.addControl(drawControl);
+
+            // Cuando terminas de dibujar un polígono
+            map.on(L.Draw.Event.CREATED, function (e) {
+                tempLayer = e.layer; // Guardamos el dibujo temporalmente
+                document.getElementById('event-modal').style.display = 'flex'; // Abrimos el modal
+            });
+        }
+
+        function cancelarDibujo() {
+            document.getElementById('event-modal').style.display = 'none';
+            tempLayer = null;
+        }
+
+        async function guardarEvento() {
+            const nombre = document.getElementById('ev-nombre').value;
+            const inicio = document.getElementById('ev-inicio').value;
+            const fin = document.getElementById('ev-fin').value;
+
+            if (!nombre || !inicio || !fin) return alert("Llena todos los campos.");
+
+            // Extraemos las coordenadas del dibujo para la base de datos
+            const geometria = tempLayer.getLatLngs()[0].map(punto => ({ lat: punto.lat, lng: punto.lng }));
+
+            // Convertimos las fechas a formato que Supabase entienda (ISO)
+            const isoInicio = new Date(inicio).toISOString();
+            const isoFin = new Date(fin).toISOString();
+
+            // Insertamos en Supabase
+            const { error } = await sb.from('eventos_programados').insert([{
+                nombre: nombre,
+                geometria: geometria,
+                inicio: isoInicio,
+                fin: isoFin
+            }]);
+
+            if (error) {
+                alert("Error al guardar: " + error.message);
+            } else {
+                drawnItems.addLayer(tempLayer); // Lo dejamos fijo en el mapa del admin
+                document.getElementById('event-modal').style.display = 'none';
+                alert("¡Evento programado con éxito!");
+            }
+        }
+    </script>
+</body>
+</html>
