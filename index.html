@@ -1,5 +1,256 @@
-function enviarReporte(opcionesGps) {
-    navigator.geolocation.getCurrentPosition(function(position) {
-        // Your logic here
-    });
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cierres Viales Oaxaca - Oficial</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f4f6; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        
+        #btn-reportar { position: fixed; bottom: 30px; right: 20px; background: #ea580c; color: white; border: none; border-radius: 50px; padding: 15px 25px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 15px rgba(234, 88, 12, 0.4); z-index: 1000; cursor: pointer; }
+        #btn-reportar:active { transform: scale(0.95); }
+
+        .popup-content { text-align: center; min-width: 150px; }
+        .popup-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #1f2937; }
+        .popup-time { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+        .btn-votar { background: #f3f4f6; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin: 0 5px; }
+        .btn-votar:hover { background: #e5e7eb; }
+        .btn-terminar { background: #10b981; color: white; border: none; padding: 8px; width: 100%; border-radius: 5px; margin-top: 10px; cursor: pointer; font-weight: bold; }
+
+        #modal-reporte { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-caja { background: white; padding: 25px; border-radius: 12px; width: 300px; text-align: center; }
+        .btn-opcion { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-bloqueo { background: #ef4444; color: white; }
+        .btn-calenda { background: #3b82f6; color: white; }
+        .btn-cancelar { background: #9ca3af; color: white; margin-top: 15px; }
+
+        .etiqueta-evento { display: flex; align-items: center; justify-content: center; }
+        .etiqueta-caja { background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; white-space: nowrap; text-align: center; border: 1px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    <button id="btn-reportar" onclick="abrirModal()">📍 Reportar Incidente</button>
+
+    <div id="modal-reporte">
+        <div class="modal-caja">
+            <h3>¿Qué está pasando aquí?</h3>
+            <p style="font-size: 12px; color: #666;">El reporte se creará en tu ubicación actual.</p>
+            <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo / Cierre</button>
+            <button class="btn-opcion btn-calenda" onclick="enviarReporte('calenda')">🎉 Calenda</button>
+            <button class="btn-opcion btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        // --- CONFIGURACIÓN SUPABASE ---
+        const supabaseUrl = 'https://zlqpmhzzkdtexdxhsdft.supabase.co';
+        
+        // 👇 PEGA TU LLAVE PUBLICA (anon/public) QUE EMPIEZA CON 'eyJ...' AQUÍ 👇
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscXBtaHp6a2R0ZXhkeGhzZGZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxMzE4NTgsImV4cCI6MjA4OTcwNzg1OH0.pXNBWuLt1Egx_BaQmuuujojFZa41Br3NIH98q3QVKqQ'; 
+        
+        const sb = supabase.createClient(supabaseUrl, supabaseKey);
+        
+        let map;
+        let marcadoresCapa = L.layerGroup(); 
+        let poligonosCapa = L.layerGroup();  
+
+        map = L.map('map', { zoomControl: false }).setView([17.0605, -96.7251], 15);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        map.addLayer(marcadoresCapa);
+        map.addLayer(poligonosCapa);
+
+        // --- FÓRMULA DE DISTANCIA (HAVERSINE) ---
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; 
+            const f1 = lat1 * Math.PI/180, f2 = lat2 * Math.PI/180;
+            const df = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(df/2) * Math.sin(df/2) + Math.cos(f1) * Math.cos(f2) * Math.sin(dl/2) * Math.sin(dl/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
+        }
+
+        // --- CARGAR POLÍGONOS DEL ADMIN ---
+        async function cargarCierresProgramados() {
+            poligonosCapa.clearLayers();
+            const ahora = new Date().toISOString();
+
+            const { data } = await sb.from('eventos_programados')
+                .select('*')
+                .eq('activo', true)
+                .lte('inicio', ahora)
+                .gte('fin', ahora);
+
+            if (data) {
+                data.forEach(evento => {
+                    const coords = evento.geometria.map(p => [p.lat, p.lng]);
+                    L.polygon(coords, { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, dashArray: '5, 5', weight: 2, interactive: false }).addTo(poligonosCapa);
+                    
+                    const centro = L.polygon(coords).getBounds().getCenter();
+                    L.marker(centro, { icon: L.divIcon({ className: 'etiqueta-evento', html: `<div class="etiqueta-caja">🚧 ${evento.nombre}</div>`, iconSize: [null, null] }), interactive: false }).addTo(poligonosCapa);
+                });
+            }
+        }
+
+        // --- CARGAR REPORTES CIUDADANOS ---
+        async function cargarReportes() {
+            marcadoresCapa.clearLayers();
+            const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+
+            const { data } = await sb.from('reportes')
+                .select('*')
+                .gte('creado_en', hace45Minutos);
+
+            if (data) {
+                data.forEach(reporte => {
+                    const iconoUrl = reporte.tipo === 'calenda' ? '🎉' : '🚧';
+                    const marker = L.marker([reporte.lat, reporte.lng], {
+                        icon: L.divIcon({ className: 'custom-icon', html: `<div style="font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">${iconoUrl}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
+                    });
+
+                    const horaLocal = new Date(reporte.creado_en).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    const popupHTML = `
+                        <div class="popup-content">
+                            <div class="popup-title">${reporte.tipo.toUpperCase()}</div>
+                            <div class="popup-time">Reportado a las ${horaLocal}</div>
+                            <div>
+                                <button class="btn-votar" onclick="votar('${reporte.id}', 1)">👍 ${reporte.confirmaciones || 0}</button>
+                                <button class="btn-votar" onclick="votar('${reporte.id}', -1)">👎</button>
+                            </div>
+                            <button class="btn-terminar" onclick="marcarTerminado('${reporte.id}')">Marcar como terminado</button>
+                        </div>
+                    `;
+                    marker.bindPopup(popupHTML);
+                    marcadoresCapa.addLayer(marker);
+                });
+            }
+        }
+
+        // --- INTERACCIONES ---
+        function abrirModal() { document.getElementById('modal-reporte').style.display = 'flex'; }
+        function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
+
+        async function enviarReporte(tipo) {
+    console.log("Iniciando reporte de:", tipo);
+    
+    // 1. Feedback visual inmediato
+    const btnOriginal = event.target.innerText;
+    event.target.innerText = "Enviando...";
+    event.target.disabled = true;
+
+    if (!navigator.geolocation) {
+        alert("Tu navegador no soporta geolocalización.");
+        return;
+    }
+
+    // 2. Configuración de GPS con tiempo límite
+    const opcionesGps = { 
+        enableHighAccuracy: true, 
+        timeout: 8000, // 8 segundos máximo
+        maximumAge: 0 
+    };
+
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const { latitude: lat, longitude: lng } = position.coords;
+            console.log("Ubicación obtenida:", lat, lng);
+
+            try {
+                const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+                
+                // Buscar si ya existe un reporte similar cerca
+                const { data: existentes, error: errorBusqueda } = await sb
+                    .from('reportes')
+                    .select('*')
+                    .eq('tipo', tipo)
+                    .gte('creado_en', hace45Minutos);
+
+                if (errorBusqueda) throw errorBusqueda;
+
+                const radioPermitido = tipo === 'calenda' ? 250 : 120;
+                let cercano = existentes?.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radioPermitido);
+
+                if (cercano) {
+                    // Actualizar existente
+                    const { error: errorUpdate } = await sb
+                        .from('reportes')
+                        .update({ 
+                            confirmaciones: (cercano.confirmaciones || 0) + 1,
+                            creado_en: new Date().toISOString() 
+                        })
+                        .eq('id', cercano.id);
+                    if (errorUpdate) throw errorUpdate;
+                } else {
+                    // Insertar nuevo
+                    const { error: errorInsert } = await sb
+                        .from('reportes')
+                        .insert([{ lat, lng, tipo, confirmaciones: 1, creado_en: new Date().toISOString() }]);
+                    if (errorInsert) throw errorInsert;
+                }
+
+                alert("¡Reporte enviado!");
+                cerrarModal();
+                cargarReportes();
+
+            } catch (err) {
+                console.error("Error de base de datos:", err);
+                alert("Error en base de datos: " + (err.message || "Revisa las políticas RLS en Supabase"));
+            } finally {
+                // Restaurar botón
+                event.target.innerText = btnOriginal;
+                event.target.disabled = false;
+            }
+        },
+        (error) => {
+            console.warn("Error de GPS:", error);
+            let msg = "Error de ubicación: ";
+            if (error.code === 1) msg += "Debes dar permiso al GPS.";
+            else if (error.code === 3) msg += "Se agotó el tiempo de espera.";
+            else msg += "Asegúrate de estar en un lugar abierto.";
+            
+            alert(msg);
+            event.target.innerText = btnOriginal;
+            event.target.disabled = false;
+        },
+        opcionesGps
+    );
 }
+                    
+                    cerrarModal();
+                    cargarReportes();
+                });
+            }
+        }
+
+        async function votar(id, valor) {
+            const { data } = await sb.from('reportes').select('confirmaciones').eq('id', id).single();
+            if (data) {
+                const nuevosVotos = (data.confirmaciones || 0) + valor;
+                await sb.from('reportes').update({ confirmaciones: nuevosVotos }).eq('id', id);
+                cargarReportes(); 
+            }
+        }
+
+        async function marcarTerminado(id) {
+            if(confirm("¿Seguro que este evento ya terminó y el paso está libre?")) {
+                await sb.from('reportes').delete().eq('id', id);
+                cargarReportes();
+            }
+        }
+
+        // --- INICIAR Y REFRESCAR ---
+        cargarReportes();
+        cargarCierresProgramados();
+        setInterval(() => { cargarReportes(); cargarCierresProgramados(); }, 120000); 
+
+    </script>
+</body>
+</html>
