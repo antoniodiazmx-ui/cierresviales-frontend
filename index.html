@@ -31,10 +31,10 @@
     <div id="modal-reporte">
         <div class="modal-caja">
             <h3>¿Qué reportar?</h3>
-            <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo</button>
-            <button class="btn-opcion btn-calenda" onclick="enviarReporte('calenda')">🎉 Calenda</button>
-            <button class="btn-opcion btn-accidente" onclick="enviarReporte('accidente')">⚠️ Accidente</button>
-            <button class="btn-opcion btn-obra" onclick="enviarReporte('obra')">🏗️ Obra</button>
+            <button class="btn-opcion btn-bloqueo" onclick="('bloqueo')">🚧 Bloqueo</button>
+            <button class="btn-opcion btn-calenda" onclick="('calenda')">🎉 Calenda</button>
+            <button class="btn-opcion btn-accidente" onclick="('accidente')">⚠️ Accidente</button>
+            <button class="btn-opcion btn-obra" onclick="('obra')">🏗️ Obra</button>
             <button class="btn-opcion btn-cancelar" onclick="cerrarModal()">Cancelar</button>
         </div>
     </div>
@@ -115,25 +115,86 @@
         function abrirModal() { document.getElementById('modal-reporte').style.display = 'flex'; }
         function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
 
+//        async function enviarReporte(tipo) {
+//            navigator.geolocation.getCurrentPosition(async (pos) => {
+//                const { latitude: lat, longitude: lng } = pos.coords;
+//                const hace45 = new Date(Date.now() - 45 * 60000).toISOString();
+//
+//                const { data: ext } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('created_at', hace45);
+//                const radio = tipo === 'calenda' ? 250 : 120;
+//                const cercano = ext?.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radio);
+//
+//                if (cercano) {
+//                    await sb.from('reportes').update({ confirmaciones: (cercano.confirmaciones || 0) + 1 }).eq('id', cercano.id);
+//                } else {
+//                    await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, created_at: new Date().toISOString() }]);
+//                }
+//                cerrarModal();
+//                cargarReportes();
+//            }, (err) => alert("Error GPS: " + err.message), { timeout: 10000 });
+//        }
+
         async function enviarReporte(tipo) {
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                const { latitude: lat, longitude: lng } = pos.coords;
-                const hace45 = new Date(Date.now() - 45 * 60000).toISOString();
+    console.log("1. Botón presionado para:", tipo);
+    
+    if (!navigator.geolocation) {
+        alert("Tu navegador no soporta GPS o no estás en una conexión segura (HTTPS).");
+        return;
+    }
 
-                const { data: ext } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('created_at', hace45);
-                const radio = tipo === 'calenda' ? 250 : 120;
-                const cercano = ext?.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radio);
+    console.log("2. Solicitando ubicación...");
+    
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        console.log("3. Ubicación obtenida:", lat, lng);
 
-                if (cercano) {
-                    await sb.from('reportes').update({ confirmaciones: (cercano.confirmaciones || 0) + 1 }).eq('id', cercano.id);
-                } else {
-                    await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, created_at: new Date().toISOString() }]);
-                }
-                cerrarModal();
-                cargarReportes();
-            }, (err) => alert("Error GPS: " + err.message), { timeout: 10000 });
+        try {
+            const hace45 = new Date(Date.now() - 45 * 60000).toISOString();
+            
+            // Verificación de reporte cercano
+            const { data: ext, error: errBusqueda } = await sb.from('reportes')
+                .select('*')
+                .eq('tipo', tipo)
+                .gte('created_at', hace45);
+
+            if (errBusqueda) throw errBusqueda;
+
+            const radio = tipo === 'calenda' ? 250 : 120;
+            const cercano = ext?.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radio);
+
+            if (cercano) {
+                console.log("4. Actualizando reporte existente...");
+                const { error: errUpd } = await sb.from('reportes')
+                    .update({ confirmaciones: (cercano.confirmaciones || 0) + 1 })
+                    .eq('id', cercano.id);
+                if (errUpd) throw errUpd;
+            } else {
+                console.log("4. Insertando nuevo reporte...");
+                const { error: errIns } = await sb.from('reportes')
+                    .insert([{ lat, lng, tipo, confirmaciones: 1, created_at: new Date().toISOString() }]);
+                if (errIns) throw errIns;
+            }
+
+            alert("¡Reporte enviado con éxito!");
+            cerrarModal();
+            cargarReportes();
+
+        } catch (error) {
+            console.error("Error en Supabase:", error);
+            alert("Error de Base de Datos: " + error.message);
         }
+    }, (err) => {
+        console.error("Error de GPS:", err);
+        alert("Error de GPS: " + err.message + ". Verifica que el GPS esté encendido y tengas permisos.");
+    }, { 
+        enableHighAccuracy: true, 
+        timeout: 10000, 
+        maximumAge: 0 
+    });
+}
+//  fin de funcion enviarreporte
 
+        
         async function votar(id, val) {
             const { data } = await sb.from('reportes').select('confirmaciones').eq('id', id).single();
             await sb.from('reportes').update({ confirmaciones: (data.confirmaciones || 0) + val }).eq('id', id);
