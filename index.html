@@ -11,31 +11,19 @@
         body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f4f6; }
         #map { height: 100%; width: 100%; z-index: 1; }
         
-        #btn-reportar { 
-            position: fixed; 
-            bottom: 30px; 
-            right: 20px; 
-            background: #facc15; 
-            border: 3px solid #ffffff; 
-            border-radius: 50%; 
-            width: 65px; 
-            height: 65px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3); 
-            z-index: 1000; 
-            cursor: pointer; 
-            transition: transform 0.1s;
-        }
+        /* Botón de Reporte (Waze) */
+        #btn-reportar { position: fixed; bottom: 30px; right: 20px; background: #facc15; border: 3px solid #ffffff; border-radius: 50%; width: 65px; height: 65px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; cursor: pointer; transition: transform 0.1s; }
         #btn-reportar:active { transform: scale(0.90); }
         #btn-reportar svg { width: 35px; height: 35px; }
+
+        /* Botón de Ubicación (GPS) */
+        #btn-ubicacion { position: fixed; bottom: 110px; right: 27px; background: white; border: 2px solid #ccc; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; cursor: pointer; }
+        #btn-ubicacion:active { background: #f0f0f0; }
 
         .popup-content { text-align: center; min-width: 150px; }
         .popup-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #1f2937; }
         .popup-time { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
         .btn-votar { background: #f3f4f6; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin: 0 5px; }
-        .btn-votar:hover { background: #e5e7eb; }
         .btn-terminar { background: #10b981; color: white; border: none; padding: 8px; width: 100%; border-radius: 5px; margin-top: 10px; cursor: pointer; font-weight: bold; }
 
         #modal-reporte { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center; }
@@ -56,6 +44,8 @@
 
     <div id="map"></div>
     
+    <button id="btn-ubicacion" onclick="centrarMapa()" title="Mi Ubicación">🎯</button>
+
     <button id="btn-reportar" onclick="abrirModal()">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2L1 21h22L12 2z" fill="#1e293b"/>
@@ -66,7 +56,7 @@
     <div id="modal-reporte">
         <div class="modal-caja">
             <h3 id="modal-titulo">¿Qué está pasando aquí?</h3>
-            <p style="font-size: 12px; color: #666;">El reporte se creará en tu ubicación actual.</p>
+            <p id="modal-subtitulo" style="font-size: 12px; color: #666;">El reporte se creará en tu ubicación actual.</p>
             <div id="modal-botones">
                 <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo / Cierre</button>
                 <button class="btn-opcion btn-calenda" onclick="enviarReporte('calenda')">🎉 Calenda</button>
@@ -84,7 +74,7 @@
         // --- CONFIGURACIÓN SUPABASE ---
         const supabaseUrl = 'https://zlqpmhzzkdtexdxhsdft.supabase.co';
         
-        // 👇 PEGA TU LLAVE (sb_publishable_...) ENTRE LAS COMILLAS 👇
+        // 👇 PEGA TU LLAVE PUBLICA AQUÍ 👇
         const supabaseKey = 'sb_publishable_gy4kp8kmATozO9c_jhqh-w_l_rxU9UW'; 
         
         const sb = supabase.createClient(supabaseUrl, supabaseKey);
@@ -92,6 +82,7 @@
         let map;
         let marcadoresCapa = L.layerGroup(); 
         let poligonosCapa = L.layerGroup();  
+        let miUbicacionPunto = null;
 
         map = L.map('map', { zoomControl: false }).setView([17.0605, -96.7251], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
@@ -99,6 +90,23 @@
         map.addLayer(marcadoresCapa);
         map.addLayer(poligonosCapa);
 
+        // --- FUNCIONES DEL GPS (LOCALIZACIÓN) ---
+        function centrarMapa() {
+            map.locate({setView: true, maxZoom: 16});
+        }
+
+        map.on('locationfound', function(e) {
+            if(miUbicacionPunto) map.removeLayer(miUbicacionPunto);
+            miUbicacionPunto = L.circleMarker(e.latlng, {
+                radius: 8, color: 'white', weight: 2, fillColor: '#3b82f6', fillOpacity: 1
+            }).addTo(map);
+        });
+
+        map.on('locationerror', function(e) {
+            alert("No pudimos acceder a tu ubicación. Verifica que tu GPS esté encendido.");
+        });
+
+        // --- DISTANCIA ---
         function calcularDistancia(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
             const f1 = lat1 * Math.PI/180, f2 = lat2 * Math.PI/180;
@@ -107,7 +115,112 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
         }
 
+        // --- CARGAS ---
         async function cargarCierresProgramados() {
             poligonosCapa.clearLayers();
             const ahora = new Date().toISOString();
             const { data } = await sb.from('eventos_programados').select('*').eq('activo', true).lte('inicio', ahora).gte('fin', ahora);
+            if (data) {
+                data.forEach(evento => {
+                    const coords = evento.geometria.map(p => [p.lat, p.lng]);
+                    L.polygon(coords, { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, dashArray: '5, 5', weight: 2, interactive: false }).addTo(poligonosCapa);
+                    const centro = L.polygon(coords).getBounds().getCenter();
+                    L.marker(centro, { icon: L.divIcon({ className: 'etiqueta-evento', html: `<div class="etiqueta-caja">🚧 ${evento.nombre}</div>`, iconSize: [null, null] }), interactive: false }).addTo(poligonosCapa);
+                });
+            }
+        }
+
+        async function cargarReportes() {
+            marcadoresCapa.clearLayers();
+            const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+            const { data } = await sb.from('reportes').select('*').gte('creado_en', hace45Minutos);
+            if (data) {
+                data.forEach(reporte => {
+                    let iconoUrl = '🚧'; 
+                    if (reporte.tipo === 'calenda') iconoUrl = '🎉';
+                    else if (reporte.tipo === 'accidente') iconoUrl = '💥';
+                    else if (reporte.tipo === 'obra') iconoUrl = '👷';
+
+                    const marker = L.marker([reporte.lat, reporte.lng], {
+                        icon: L.divIcon({ className: 'custom-icon', html: `<div style="font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">${iconoUrl}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
+                    });
+                    const horaLocal = new Date(reporte.creado_en).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    const tituloPopup = reporte.tipo.replace('_', ' ').toUpperCase();
+                    const popupHTML = `<div class="popup-content"><div class="popup-title">${tituloPopup}</div><div class="popup-time">Reportado a las ${horaLocal}</div><div><button class="btn-votar" onclick="votar('${reporte.id}', 1)">👍 ${reporte.confirmaciones || 0}</button><button class="btn-votar" onclick="votar('${reporte.id}', -1)">👎</button></div><button class="btn-terminar" onclick="marcarTerminado('${reporte.id}')">Marcar como terminado</button></div>`;
+                    marker.bindPopup(popupHTML);
+                    marcadoresCapa.addLayer(marker);
+                });
+            }
+        }
+
+        // --- INTERFAZ MODAL ---
+        function abrirModal() { 
+            document.getElementById('modal-titulo').innerText = '¿Qué está pasando aquí?';
+            document.getElementById('modal-subtitulo').style.display = 'block';
+            document.getElementById('modal-botones').style.display = 'block';
+            document.getElementById('modal-reporte').style.display = 'flex'; 
+        }
+        function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
+
+        // --- REPORTE CON TIMEOUT ANTI-CONGELAMIENTO ---
+        function enviarReporte(tipo) {
+            if ("geolocation" in navigator) {
+                // UI Feedback Inmediato
+                document.getElementById('modal-titulo').innerText = '📍 Obteniendo GPS...';
+                document.getElementById('modal-subtitulo').style.display = 'none';
+                document.getElementById('modal-botones').style.display = 'none';
+
+                // Timeout configurado a 10 segundos
+                const opcionesGPS = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+
+                navigator.geolocation.getCurrentPosition(async function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const radioPermitido = tipo === 'calenda' ? 250 : 120; 
+                    
+                    const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+                    const { data: existentes } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('creado_en', hace45Minutos);
+                    
+                    let cercano = null;
+                    if (existentes) cercano = existentes.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radioPermitido);
+
+                    if (cercano) {
+                        await sb.from('reportes').update({ confirmaciones: (cercano.confirmaciones || 0) + 1, lat: lat, lng: lng, creado_en: new Date().toISOString() }).eq('id', cercano.id);
+                        alert(`📍 Reporte consolidado (+1 voto) a menos de ${radioPermitido} metros.`);
+                    } else {
+                        await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, creado_en: new Date().toISOString() }]);
+                        alert("✅ Nuevo reporte agregado al mapa.");
+                    }
+                    cerrarModal();
+                    cargarReportes();
+                }, function(error) {
+                    // Si falla o se acaba el tiempo, lo atrapamos aquí
+                    alert("❌ Error de GPS: No pudimos ubicarte. Verifica tus permisos o intenta en un área abierta.");
+                    cerrarModal();
+                }, opcionesGPS);
+            } else {
+                alert("Tu navegador no soporta geolocalización.");
+            }
+        }
+
+        async function votar(id, valor) {
+            const { data } = await sb.from('reportes').select('confirmaciones').eq('id', id).single();
+            if (data) {
+                await sb.from('reportes').update({ confirmaciones: (data.confirmaciones || 0) + valor }).eq('id', id);
+                cargarReportes(); 
+            }
+        }
+
+        async function marcarTerminado(id) {
+            if(confirm("¿Confirmas que el paso está libre?")) {
+                await sb.from('reportes').delete().eq('id', id);
+                cargarReportes();
+            }
+        }
+
+        cargarReportes();
+        cargarCierresProgramados();
+        setInterval(() => { cargarReportes(); cargarCierresProgramados(); }, 120000); 
+    </script>
+</body>
+</html>
