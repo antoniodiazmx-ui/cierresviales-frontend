@@ -11,12 +11,11 @@
         body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f4f6; }
         #map { height: 100%; width: 100%; z-index: 1; }
         
-        /* 1. Nuevo diseño del botón tipo Waze */
         #btn-reportar { 
             position: fixed; 
             bottom: 30px; 
             right: 20px; 
-            background: #facc15; /* Amarillo Waze */
+            background: #facc15; 
             border: 3px solid #ffffff; 
             border-radius: 50%; 
             width: 65px; 
@@ -43,11 +42,10 @@
         .modal-caja { background: white; padding: 25px; border-radius: 12px; width: 300px; text-align: center; }
         .btn-opcion { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
         
-        /* 2. Colores para los 4 tipos de reporte */
         .btn-bloqueo { background: #ef4444; color: white; }
         .btn-calenda { background: #3b82f6; color: white; }
-        .btn-accidente { background: #f97316; color: white; } /* Naranja */
-        .btn-obra { background: #eab308; color: black; } /* Amarillo */
+        .btn-accidente { background: #f97316; color: white; } 
+        .btn-obra { background: #eab308; color: black; } 
         .btn-cancelar { background: #9ca3af; color: white; margin-top: 15px; }
 
         .etiqueta-evento { display: flex; align-items: center; justify-content: center; }
@@ -67,13 +65,15 @@
 
     <div id="modal-reporte">
         <div class="modal-caja">
-            <h3>¿Qué está pasando aquí?</h3>
+            <h3 id="modal-titulo">¿Qué está pasando aquí?</h3>
             <p style="font-size: 12px; color: #666;">El reporte se creará en tu ubicación actual.</p>
-            <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo / Cierre</button>
-            <button class="btn-opcion btn-calenda" onclick="enviarReporte('calenda')">🎉 Calenda</button>
-            <button class="btn-opcion btn-accidente" onclick="enviarReporte('accidente')">💥 Accidente</button>
-            <button class="btn-opcion btn-obra" onclick="enviarReporte('obra')">👷 Obra / Reparación</button>
-            <button class="btn-opcion btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+            <div id="modal-botones">
+                <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo / Cierre</button>
+                <button class="btn-opcion btn-calenda" onclick="enviarReporte('calenda')">🎉 Calenda</button>
+                <button class="btn-opcion btn-accidente" onclick="enviarReporte('accidente')">💥 Accidente</button>
+                <button class="btn-opcion btn-obra" onclick="enviarReporte('obra')">👷 Obra / Reparación</button>
+                <button class="btn-opcion btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+            </div>
         </div>
     </div>
 
@@ -99,7 +99,6 @@
         map.addLayer(marcadoresCapa);
         map.addLayer(poligonosCapa);
 
-        // --- FÓRMULA DE DISTANCIA (HAVERSINE) ---
         function calcularDistancia(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
             const f1 = lat1 * Math.PI/180, f2 = lat2 * Math.PI/180;
@@ -108,123 +107,7 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
         }
 
-        // --- CARGAR POLÍGONOS DEL ADMIN ---
         async function cargarCierresProgramados() {
             poligonosCapa.clearLayers();
             const ahora = new Date().toISOString();
-
-            const { data } = await sb.from('eventos_programados')
-                .select('*')
-                .eq('activo', true)
-                .lte('inicio', ahora)
-                .gte('fin', ahora);
-
-            if (data) {
-                data.forEach(evento => {
-                    const coords = evento.geometria.map(p => [p.lat, p.lng]);
-                    L.polygon(coords, { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, dashArray: '5, 5', weight: 2, interactive: false }).addTo(poligonosCapa);
-                    
-                    const centro = L.polygon(coords).getBounds().getCenter();
-                    L.marker(centro, { icon: L.divIcon({ className: 'etiqueta-evento', html: `<div class="etiqueta-caja">🚧 ${evento.nombre}</div>`, iconSize: [null, null] }), interactive: false }).addTo(poligonosCapa);
-                });
-            }
-        }
-
-        // --- CARGAR REPORTES CIUDADANOS ---
-        async function cargarReportes() {
-            marcadoresCapa.clearLayers();
-            const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
-
-            const { data } = await sb.from('reportes')
-                .select('*')
-                .gte('creado_en', hace45Minutos);
-
-            if (data) {
-                data.forEach(reporte => {
-                    // 4. Lógica de íconos para los 4 tipos
-                    let iconoUrl = '🚧'; // Default para bloqueo
-                    if (reporte.tipo === 'calenda') iconoUrl = '🎉';
-                    else if (reporte.tipo === 'accidente') iconoUrl = '💥';
-                    else if (reporte.tipo === 'obra') iconoUrl = '👷';
-
-                    const marker = L.marker([reporte.lat, reporte.lng], {
-                        icon: L.divIcon({ className: 'custom-icon', html: `<div style="font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">${iconoUrl}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
-                    });
-
-                    const horaLocal = new Date(reporte.creado_en).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    const tituloPopup = reporte.tipo.replace('_', ' ').toUpperCase();
-                    
-                    const popupHTML = `
-                        <div class="popup-content">
-                            <div class="popup-title">${tituloPopup}</div>
-                            <div class="popup-time">Reportado a las ${horaLocal}</div>
-                            <div>
-                                <button class="btn-votar" onclick="votar('${reporte.id}', 1)">👍 ${reporte.confirmaciones || 0}</button>
-                                <button class="btn-votar" onclick="votar('${reporte.id}', -1)">👎</button>
-                            </div>
-                            <button class="btn-terminar" onclick="marcarTerminado('${reporte.id}')">Marcar como terminado</button>
-                        </div>
-                    `;
-                    marker.bindPopup(popupHTML);
-                    marcadoresCapa.addLayer(marker);
-                });
-            }
-        }
-
-        // --- INTERACCIONES ---
-        function abrirModal() { document.getElementById('modal-reporte').style.display = 'flex'; }
-        function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
-
-        function enviarReporte(tipo) {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(async function(position) {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    const radioPermitido = tipo === 'calenda' ? 250 : 120; 
-                    
-                    const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
-                    const { data: existentes } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('creado_en', hace45Minutos);
-                    
-                    let cercano = null;
-                    if (existentes) cercano = existentes.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radioPermitido);
-
-                    if (cercano) {
-                        await sb.from('reportes').update({ 
-                            confirmaciones: (cercano.confirmaciones || 0) + 1, 
-                            lat: lat, lng: lng, 
-                            creado_en: new Date().toISOString() 
-                        }).eq('id', cercano.id);
-                    } else {
-                        await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, creado_en: new Date().toISOString() }]);
-                    }
-                    
-                    cerrarModal();
-                    cargarReportes();
-                });
-            }
-        }
-
-        async function votar(id, valor) {
-            const { data } = await sb.from('reportes').select('confirmaciones').eq('id', id).single();
-            if (data) {
-                const nuevosVotos = (data.confirmaciones || 0) + valor;
-                await sb.from('reportes').update({ confirmaciones: nuevosVotos }).eq('id', id);
-                cargarReportes(); 
-            }
-        }
-
-        async function marcarTerminado(id) {
-            if(confirm("¿Seguro que este evento ya terminó y el paso está libre?")) {
-                await sb.from('reportes').delete().eq('id', id);
-                cargarReportes();
-            }
-        }
-
-        // --- INICIAR Y REFRESCAR ---
-        cargarReportes();
-        cargarCierresProgramados();
-        setInterval(() => { cargarReportes(); cargarCierresProgramados(); }, 120000); 
-
-    </script>
-</body>
-</html>
+            const { data } = await sb.from('eventos_programados').select('*').eq('activo', true).lte('inicio', ahora).gte('fin', ahora);
