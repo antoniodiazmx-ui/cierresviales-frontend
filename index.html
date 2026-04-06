@@ -138,28 +138,91 @@
         function abrirModal() { document.getElementById('modal-reporte').style.display = 'flex'; }
         function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
 
-        function enviarReporte(tipo) {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(async function(position) {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    const radioPermitido = tipo === 'calenda' ? 250 : 120; 
-                    
-                    const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
-                    const { data: existentes } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('creado_en', hace45Minutos);
-                    
-                    let cercano = null;
-                    if (existentes) cercano = existentes.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radioPermitido);
+        async function enviarReporte(tipo) {
+    console.log("Iniciando reporte de:", tipo);
+    
+    // 1. Feedback visual inmediato
+    const btnOriginal = event.target.innerText;
+    event.target.innerText = "Enviando...";
+    event.target.disabled = true;
 
-                    if (cercano) {
-                        await sb.from('reportes').update({ 
-                            confirmaciones: (cercano.confirmaciones || 0) + 1, 
-                            lat: lat, lng: lng, 
+    if (!navigator.geolocation) {
+        alert("Tu navegador no soporta geolocalización.");
+        return;
+    }
+
+    // 2. Configuración de GPS con tiempo límite
+    const opcionesGps = { 
+        enableHighAccuracy: true, 
+        timeout: 8000, // 8 segundos máximo
+        maximumAge: 0 
+    };
+
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const { latitude: lat, longitude: lng } = position.coords;
+            console.log("Ubicación obtenida:", lat, lng);
+
+            try {
+                const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+                
+                // Buscar si ya existe un reporte similar cerca
+                const { data: existentes, error: errorBusqueda } = await sb
+                    .from('reportes')
+                    .select('*')
+                    .eq('tipo', tipo)
+                    .gte('creado_en', hace45Minutos);
+
+                if (errorBusqueda) throw errorBusqueda;
+
+                const radioPermitido = tipo === 'calenda' ? 250 : 120;
+                let cercano = existentes?.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radioPermitido);
+
+                if (cercano) {
+                    // Actualizar existente
+                    const { error: errorUpdate } = await sb
+                        .from('reportes')
+                        .update({ 
+                            confirmaciones: (cercano.confirmaciones || 0) + 1,
                             creado_en: new Date().toISOString() 
-                        }).eq('id', cercano.id);
-                    } else {
-                        await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, creado_en: new Date().toISOString() }]);
-                    }
+                        })
+                        .eq('id', cercano.id);
+                    if (errorUpdate) throw errorUpdate;
+                } else {
+                    // Insertar nuevo
+                    const { error: errorInsert } = await sb
+                        .from('reportes')
+                        .insert([{ lat, lng, tipo, confirmaciones: 1, creado_en: new Date().toISOString() }]);
+                    if (errorInsert) throw errorInsert;
+                }
+
+                alert("¡Reporte enviado!");
+                cerrarModal();
+                cargarReportes();
+
+            } catch (err) {
+                console.error("Error de base de datos:", err);
+                alert("Error en base de datos: " + (err.message || "Revisa las políticas RLS en Supabase"));
+            } finally {
+                // Restaurar botón
+                event.target.innerText = btnOriginal;
+                event.target.disabled = false;
+            }
+        },
+        (error) => {
+            console.warn("Error de GPS:", error);
+            let msg = "Error de ubicación: ";
+            if (error.code === 1) msg += "Debes dar permiso al GPS.";
+            else if (error.code === 3) msg += "Se agotó el tiempo de espera.";
+            else msg += "Asegúrate de estar en un lugar abierto.";
+            
+            alert(msg);
+            event.target.innerText = btnOriginal;
+            event.target.disabled = false;
+        },
+        opcionesGps
+    );
+}
                     
                     cerrarModal();
                     cargarReportes();
