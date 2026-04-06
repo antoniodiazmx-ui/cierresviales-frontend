@@ -3,33 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cierres Viales Oaxaca - Oficial</title>
-    
+    <title>Mapa de Bloqueos Oaxaca - Estable</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f4f6; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #f3f4f6; }
         #map { height: 100%; width: 100%; z-index: 1; }
-        
-        #btn-reportar { position: fixed; bottom: 30px; right: 20px; background: #ea580c; color: white; border: none; border-radius: 50px; padding: 15px 25px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 15px rgba(234, 88, 12, 0.4); z-index: 1000; cursor: pointer; }
-        #btn-reportar:active { transform: scale(0.95); }
-
-        .popup-content { text-align: center; min-width: 150px; }
-        .popup-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #1f2937; }
-        .popup-time { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
-        .btn-votar { background: #f3f4f6; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin: 0 5px; }
-        .btn-votar:hover { background: #e5e7eb; }
-        .btn-terminar { background: #10b981; color: white; border: none; padding: 8px; width: 100%; border-radius: 5px; margin-top: 10px; cursor: pointer; font-weight: bold; }
-
-        #modal-reporte { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center; }
-        .modal-caja { background: white; padding: 25px; border-radius: 12px; width: 300px; text-align: center; }
-        .btn-opcion { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
-        .btn-bloqueo { background: #ef4444; color: white; }
-        .btn-calenda { background: #3b82f6; color: white; }
-        .btn-cancelar { background: #9ca3af; color: white; margin-top: 15px; }
-
-        .etiqueta-evento { display: flex; align-items: center; justify-content: center; }
-        .etiqueta-caja { background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; white-space: nowrap; text-align: center; border: 1px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        #btn-reportar { position: fixed; bottom: 30px; right: 20px; background: #ea580c; color: white; border: none; border-radius: 50px; padding: 15px 25px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 1000; cursor: pointer; }
+        .popup-content { text-align: center; min-width: 160px; }
+        .btn-votar { background: #eee; border: 1px solid #ccc; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin: 5px; }
+        .btn-terminar { background: #10b981; color: white; border: none; padding: 8px; width: 100%; border-radius: 5px; margin-top: 10px; cursor: pointer; }
+        #modal-reporte { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-caja { background: white; padding: 20px; border-radius: 12px; width: 280px; text-align: center; }
+        .btn-opcion { display: block; width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; }
+        .btn-bloqueo { background: #ef4444; }
+        .btn-calenda { background: #3b82f6; }
+        .btn-accidente { background: #f59e0b; }
+        .btn-obra { background: #8b5cf6; }
+        .btn-cancelar { background: #6b7280; }
+        .etiqueta-caja { background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid white; }
     </style>
 </head>
 <body>
@@ -39,10 +30,11 @@
 
     <div id="modal-reporte">
         <div class="modal-caja">
-            <h3>¿Qué está pasando aquí?</h3>
-            <p style="font-size: 12px; color: #666;">El reporte se creará en tu ubicación actual.</p>
-            <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo / Cierre</button>
+            <h3>¿Qué reportar?</h3>
+            <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo</button>
             <button class="btn-opcion btn-calenda" onclick="enviarReporte('calenda')">🎉 Calenda</button>
+            <button class="btn-opcion btn-accidente" onclick="enviarReporte('accidente')">⚠️ Accidente</button>
+            <button class="btn-opcion btn-obra" onclick="enviarReporte('obra')">🏗️ Obra</button>
             <button class="btn-opcion btn-cancelar" onclick="cerrarModal()">Cancelar</button>
         </div>
     </div>
@@ -51,143 +43,113 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script>
-        // --- CONFIGURACIÓN SUPABASE ---
         const supabaseUrl = 'https://zlqpmhzzkdtexdxhsdft.supabase.co';
-        
-        // 👇 PEGA TU LLAVE PUBLICA (anon/public) QUE EMPIEZA CON 'eyJ...' AQUÍ 👇
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscXBtaHp6a2R0ZXhkeGhzZGZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxMzE4NTgsImV4cCI6MjA4OTcwNzg1OH0.pXNBWuLt1Egx_BaQmuuujojFZa41Br3NIH98q3QVKqQ'; 
-        
         const sb = supabase.createClient(supabaseUrl, supabaseKey);
-        
-        let map;
-        let marcadoresCapa = L.layerGroup(); 
-        let poligonosCapa = L.layerGroup();  
 
-        map = L.map('map', { zoomControl: false }).setView([17.0605, -96.7251], 15);
+        let map = L.map('map', { zoomControl: false }).setView([17.0605, -96.7251], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-        map.addLayer(marcadoresCapa);
-        map.addLayer(poligonosCapa);
+        let marcadoresCapa = L.layerGroup().addTo(map);
+        let poligonosCapa = L.layerGroup().addTo(map);
 
-        // --- FÓRMULA DE DISTANCIA (HAVERSINE) ---
         function calcularDistancia(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; 
-            const f1 = lat1 * Math.PI/180, f2 = lat2 * Math.PI/180;
-            const df = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
-            const a = Math.sin(df/2) * Math.sin(df/2) + Math.cos(f1) * Math.cos(f2) * Math.sin(dl/2) * Math.sin(dl/2);
-            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
+            const R = 6371e3;
+            const dLat = (lat2-lat1) * Math.PI/180;
+            const dLon = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
         }
 
-        // --- CARGAR POLÍGONOS DEL ADMIN ---
+        // --- CARGAR POLÍGONOS (ADMIN) ---
         async function cargarCierresProgramados() {
             poligonosCapa.clearLayers();
             const ahora = new Date().toISOString();
-
-            const { data } = await sb.from('eventos_programados')
+            
+            // Ajuste de columnas para evitar Error 400
+            const { data, error } = await sb.from('eventos_programados')
                 .select('*')
-                .eq('activo', true)
-                .lte('inicio', ahora)
-                .gte('fin', ahora);
+                .eq('activo', true) // Si falla aquí, cambiar a 'is_active'
+                .lte('inicio', ahora) // Si falla aquí, cambiar a 'start_time'
+                .gte('fin', ahora);   // Si falla aquí, cambiar a 'end_time'
 
             if (data) {
-                data.forEach(evento => {
-                    const coords = evento.geometria.map(p => [p.lat, p.lng]);
-                    L.polygon(coords, { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, dashArray: '5, 5', weight: 2, interactive: false }).addTo(poligonosCapa);
-                    
+                data.forEach(ev => {
+                    const coords = ev.geometria.map(p => [p.lat, p.lng]);
+                    L.polygon(coords, { color: '#ef4444', fillOpacity: 0.2, weight: 2 }).addTo(poligonosCapa);
                     const centro = L.polygon(coords).getBounds().getCenter();
-                    L.marker(centro, { icon: L.divIcon({ className: 'etiqueta-evento', html: `<div class="etiqueta-caja">🚧 ${evento.nombre}</div>`, iconSize: [null, null] }), interactive: false }).addTo(poligonosCapa);
+                    L.marker(centro, { icon: L.divIcon({ className: 'etiqueta-evento', html: `<div class="etiqueta-caja">🚧 ${ev.nombre}</div>` })}).addTo(poligonosCapa);
                 });
             }
         }
 
-        // --- CARGAR REPORTES CIUDADANOS ---
+        // --- CARGAR REPORTES (CIUDADANOS) ---
         async function cargarReportes() {
             marcadoresCapa.clearLayers();
-            const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+            const hace45 = new Date(Date.now() - 45 * 60000).toISOString();
 
-            const { data } = await sb.from('reportes')
+            const { data, error } = await sb.from('reportes')
                 .select('*')
-                .gte('created_at', hace45Minutos);
+                .gte('created_at', hace45); // Columna corregida
 
             if (data) {
-                data.forEach(reporte => {
-                    const iconoUrl = reporte.tipo === 'calenda' ? '🎉' : '🚧';
-                    const marker = L.marker([reporte.lat, reporte.lng], {
-                        icon: L.divIcon({ className: 'custom-icon', html: `<div style="font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">${iconoUrl}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
+                data.forEach(r => {
+                    const emojis = { bloqueo: '🚧', calenda: '🎉', accidente: '⚠️', obra: '🏗️' };
+                    const marker = L.marker([r.lat, r.lng], {
+                        icon: L.divIcon({ html: `<div style="font-size: 24px;">${emojis[r.tipo] || '📍'}</div>`, iconSize: [30,30] })
                     });
 
-                    const horaLocal = new Date(reporte.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     const popupHTML = `
                         <div class="popup-content">
-                            <div class="popup-title">${reporte.tipo.toUpperCase()}</div>
-                            <div class="popup-time">Reportado a las ${horaLocal}</div>
-                            <div>
-                                <button class="btn-votar" onclick="votar('${reporte.id}', 1)">👍 ${reporte.confirmaciones || 0}</button>
-                                <button class="btn-votar" onclick="votar('${reporte.id}', -1)">👎</button>
-                            </div>
-                            <button class="btn-terminar" onclick="marcarTerminado('${reporte.id}')">Marcar como terminado</button>
-                        </div>
-                    `;
-                    marker.bindPopup(popupHTML);
-                    marcadoresCapa.addLayer(marker);
+                            <strong>${r.tipo.toUpperCase()}</strong><br>
+                            <button class="btn-votar" onclick="votar('${r.id}', 1)">👍 ${r.confirmaciones || 0}</button>
+                            <button class="btn-votar" onclick="votar('${r.id}', -1)">👎</button>
+                            <button class="btn-terminar" onclick="marcarTerminado('${r.id}')">Terminado</button>
+                        </div>`;
+                    marker.bindPopup(popupHTML).addTo(marcadoresCapa);
                 });
             }
         }
 
-        // --- INTERACCIONES ---
+        // --- ACCIONES ---
         function abrirModal() { document.getElementById('modal-reporte').style.display = 'flex'; }
         function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
 
-        function enviarReporte(tipo) {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(async function(position) {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    const radioPermitido = tipo === 'calenda' ? 250 : 120; 
-                    
-                    const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
-                    const { data: existentes } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('created_at', hace45Minutos);
-                    
-                    let cercano = null;
-                    if (existentes) cercano = existentes.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radioPermitido);
+        async function enviarReporte(tipo) {
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const { latitude: lat, longitude: lng } = pos.coords;
+                const hace45 = new Date(Date.now() - 45 * 60000).toISOString();
 
-                    if (cercano) {
-                        await sb.from('reportes').update({ 
-                            confirmaciones: (cercano.confirmaciones || 0) + 1, 
-                            lat: lat, lng: lng, 
-                            created_at: new Date().toISOString() 
-                        }).eq('id', cercano.id);
-                    } else {
-                        await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, created_at: new Date().toISOString() }]);
-                    }
-                    
-                    cerrarModal();
-                    cargarReportes();
-                });
-            }
+                const { data: ext } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('created_at', hace45);
+                const radio = tipo === 'calenda' ? 250 : 120;
+                const cercano = ext?.find(r => calcularDistancia(lat, lng, r.lat, r.lng) < radio);
+
+                if (cercano) {
+                    await sb.from('reportes').update({ confirmaciones: (cercano.confirmaciones || 0) + 1 }).eq('id', cercano.id);
+                } else {
+                    await sb.from('reportes').insert([{ lat, lng, tipo, confirmaciones: 1, created_at: new Date().toISOString() }]);
+                }
+                cerrarModal();
+                cargarReportes();
+            }, (err) => alert("Error GPS: " + err.message), { timeout: 10000 });
         }
 
-        async function votar(id, valor) {
+        async function votar(id, val) {
             const { data } = await sb.from('reportes').select('confirmaciones').eq('id', id).single();
-            if (data) {
-                const nuevosVotos = (data.confirmaciones || 0) + valor;
-                await sb.from('reportes').update({ confirmaciones: nuevosVotos }).eq('id', id);
-                cargarReportes(); 
-            }
+            await sb.from('reportes').update({ confirmaciones: (data.confirmaciones || 0) + val }).eq('id', id);
+            cargarReportes();
         }
 
         async function marcarTerminado(id) {
-            if(confirm("¿Seguro que este evento ya terminó y el paso está libre?")) {
+            if(confirm("¿Paso libre?")) {
                 await sb.from('reportes').delete().eq('id', id);
                 cargarReportes();
             }
         }
 
-        // --- INICIAR Y REFRESCAR ---
         cargarReportes();
         cargarCierresProgramados();
-        setInterval(() => { cargarReportes(); cargarCierresProgramados(); }, 120000); 
-
+        setInterval(cargarReportes, 60000);
     </script>
 </body>
 </html>
