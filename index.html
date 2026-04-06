@@ -193,7 +193,6 @@ let marcadoresCapa = L.layerGroup().addTo(map);
 
             alert("¡Reporte enviado con éxito!");
             cerrarModal();
-            map.flyTo([lat, lng], 17);
             cargarReportes();
 
         } catch (error) {
