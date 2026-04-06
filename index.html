@@ -25,6 +25,14 @@
 </head>
 <body>
 
+// Localizar al usuario al entrar
+map.locate({setView: true, maxZoom: 16});
+
+// Manejar si la localización tiene éxito
+map.on('locationfound', function(e) {
+    console.log("Mapa centrado en el usuario al iniciar");
+});
+    
     <div id="map"></div>
     <button id="btn-reportar" onclick="abrirModal()">📍 Reportar Incidente</button>
 
