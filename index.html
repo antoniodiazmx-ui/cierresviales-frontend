@@ -50,22 +50,6 @@
         let map = L.map('map', { zoomControl: false }).setView([17.0605, -96.7251], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-        // --- AQUÍ VA EL CÓDIGO DE LOCALIZACIÓN ---
-        map.locate({setView: true, maxZoom: 16});
-
-        map.on('locationfound', function(e) {
-        console.log("Mapa centrado en el usuario");
-        });
-
-        map.on('locationerror', function(e) {
-        console.warn("No se pudo autolocalizar: " + e.message);
-        // Si falla, se queda en el centro de Oaxaca por defecto
-        });
-        // -----------------------------------------
-
-let marcadoresCapa = L.layerGroup().addTo(map);
-// ... resto del código ...
-
         let marcadoresCapa = L.layerGroup().addTo(map);
         let poligonosCapa = L.layerGroup().addTo(map);
 
