@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cierres Viales Oaxaca - Oficial</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f3f4f6; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        
+        #btn-reportar { position: fixed; bottom: 30px; right: 20px; background: #facc15; border: 3px solid #ffffff; border-radius: 50%; width: 65px; height: 65px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; cursor: pointer; transition: transform 0.1s; }
+        #btn-reportar:active { transform: scale(0.90); }
+        #btn-reportar svg { width: 35px; height: 35px; }
+
+        #btn-ubicacion { position: fixed; bottom: 110px; right: 27px; background: white; border: 2px solid #ccc; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; cursor: pointer; }
+        #btn-ubicacion:active { background: #f0f0f0; }
+
+        .popup-content { text-align: center; min-width: 150px; }
+        .popup-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #1f2937; }
+        .popup-time { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+        .btn-votar { background: #f3f4f6; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin: 0 5px; }
+        .btn-terminar { background: #10b981; color: white; border: none; padding: 8px; width: 100%; border-radius: 5px; margin-top: 10px; cursor: pointer; font-weight: bold; }
+
+        #modal-reporte { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-caja { background: white; padding: 25px; border-radius: 12px; width: 300px; text-align: center; }
+        .btn-opcion { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        
+        .btn-bloqueo { background: #ef4444; color: white; }
+        .btn-evento { background: #3b82f6; color: white; } 
+        .btn-accidente { background: #f97316; color: white; } 
+        .btn-obra { background: #eab308; color: black; } 
+        .btn-cancelar { background: #9ca3af; color: white; margin-top: 15px; }
+
+        .etiqueta-evento { display: flex; align-items: center; justify-content: center; }
+        .etiqueta-caja { background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; white-space: nowrap; text-align: center; border: 1px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    
+    <button id="btn-ubicacion" onclick="centrarMapa()" title="Mi Ubicación">🎯</button>
+
+    <button id="btn-reportar" onclick="abrirModal()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L1 21h22L12 2z" fill="#1e293b"/>
+            <path d="M12 9v8m-4-4h8" stroke="#facc15" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+    </button>
+
+    <div id="modal-reporte">
+        <div class="modal-caja">
+            <h3 id="modal-titulo">¿Qué está pasando aquí?</h3>
+            <p id="modal-subtitulo" style="font-size: 12px; color: #666;">El reporte se ajustará a la calle más cercana.</p>
+            <div id="modal-botones">
+                <button class="btn-opcion btn-bloqueo" onclick="enviarReporte('bloqueo')">🚧 Bloqueo / Cierre</button>
+                <button class="btn-opcion btn-evento" onclick="enviarReporte('evento')">📢 Evento / Marcha</button>
+                <button class="btn-opcion btn-accidente" onclick="enviarReporte('accidente')">💥 Accidente</button>
+                <button class="btn-opcion btn-obra" onclick="enviarReporte('obra')">👷 Obra / Reparación</button>
+                <button class="btn-opcion btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        const supabaseUrl = 'https://zlqpmhzzkdtexdxhsdft.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpscXBtaHp6a2R0ZXhkeGhzZGZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxMzE4NTgsImV4cCI6MjA4OTcwNzg1OH0.pXNBWuLt1Egx_BaQmuuujojFZa41Br3NIH98q3QVKqQ'; 
+        const sb = supabase.createClient(supabaseUrl, supabaseKey);
+        
+        let map;
+        let marcadoresCapa = L.layerGroup(); 
+        let poligonosCapa = L.layerGroup();  
+        let miUbicacionPunto = null;
+
+        map = L.map('map', { zoomControl: false }).setView([17.0605, -96.7251], 15);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        map.addLayer(marcadoresCapa);
+        map.addLayer(poligonosCapa);
+
+        function centrarMapa() {
+            map.locate({setView: true, maxZoom: 16});
+        }
+
+        map.on('locationfound', function(e) {
+            if(miUbicacionPunto) map.removeLayer(miUbicacionPunto);
+            miUbicacionPunto = L.circleMarker(e.latlng, {
+                radius: 8, color: 'white', weight: 2, fillColor: '#3b82f6', fillOpacity: 1
+            }).addTo(map);
+        });
+
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; 
+            const f1 = lat1 * Math.PI/180, f2 = lat2 * Math.PI/180;
+            const df = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
+            const a = Math.sin(df/2) * Math.sin(df/2) + Math.cos(f1) * Math.cos(f2) * Math.sin(dl/2) * Math.sin(dl/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
+        }
+
+        async function ajustarALaCalle(lat, lng) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                const url = `https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}`;
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                const data = await response.json();
+                if (data.code === 'Ok' && data.waypoints.length > 0) {
+                    return { lat: data.waypoints[0].location[1], lng: data.waypoints[0].location[0] };
+                }
+            } catch (error) {
+                console.warn("Ajuste de calle falló.");
+            }
+            return { lat, lng };
+        }
+
+        async function cargarCierresProgramados() {
+            poligonosCapa.clearLayers();
+            const ahora = new Date().toISOString();
+            const { data } = await sb.from('eventos_programados').select('*').eq('activo', true).lte('inicio', ahora).gte('fin', ahora);
+            if (data) {
+                data.forEach(evento => {
+                    const coords = evento.geometria.map(p => [p.lat, p.lng]);
+                    L.polygon(coords, { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, dashArray: '5, 5', weight: 2, interactive: false }).addTo(poligonosCapa);
+                    const centro = L.polygon(coords).getBounds().getCenter();
+                    L.marker(centro, { icon: L.divIcon({ className: 'etiqueta-evento', html: `<div class="etiqueta-caja">🚧 ${evento.nombre}</div>`, iconSize: [null, null] }), interactive: false }).addTo(poligonosCapa);
+                });
+            }
+        }
+
+        async function cargarReportes() {
+            marcadoresCapa.clearLayers();
+            const hace45Minutos = new Date(Date.now() - 45 * 60000).toISOString();
+            const { data, error } = await sb.from('reportes').select('*').gte('created_at', hace45Minutos);
+            
+            if (error) return console.error("Error BD:", error.message);
+
+            if (data) {
+                data.forEach(reporte => {
+                    let icono = '🚧'; 
+                    if (reporte.tipo === 'evento') icono = '📢';
+                    else if (reporte.tipo === 'accidente') icono = '💥';
+                    else if (reporte.tipo === 'obra') icono = '👷';
+
+                    const marker = L.marker([reporte.lat, reporte.lng], {
+                        icon: L.divIcon({ className: 'custom-icon', html: `<div style="font-size: 24px;">${icono}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] })
+                    });
+                    const hora = new Date(reporte.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    const popup = `<div class="popup-content"><div class="popup-title">${reporte.tipo.toUpperCase()}</div><div class="popup-time">${hora}</div><div><button class="btn-votar" onclick="votar('${reporte.id}', 1)">👍 ${reporte.confirmaciones || 0}</button></div><button class="btn-terminar" onclick="marcarTerminado('${reporte.id}')">Terminado</button></div>`;
+                    marker.bindPopup(popup).addTo(marcadoresCapa);
+                });
+            }
+        }
+
+        function abrirModal() { 
+            document.getElementById('modal-titulo').innerText = '¿Qué está pasando aquí?';
+            document.getElementById('modal-subtitulo').style.display = 'block';
+            document.getElementById('modal-botones').style.display = 'block';
+            document.getElementById('modal-reporte').style.display = 'flex'; 
+        }
+        function cerrarModal() { document.getElementById('modal-reporte').style.display = 'none'; }
+
+        function enviarReporte(tipo) {
+            if (!navigator.geolocation) return alert("GPS no soportado.");
+            const t = document.getElementById('modal-titulo');
+            const b = document.getElementById('modal-botones');
+            const s = document.getElementById('modal-subtitulo');
+
+            t.innerText = '📍 1/3 Obteniendo GPS...';
+            b.style.display = 'none';
+            s.style.display = 'none';
+
+            navigator.geolocation.getCurrentPosition(async function(pos) {
+                const latCruda = pos.coords.latitude;
+                const lngCruda = pos.coords.longitude;
+                
+                t.innerText = '🛣️ 2/3 Ajustando a calle...';
+                const corr = await ajustarALaCalle(latCruda, lngCruda);
+
+                t.innerText = '☁️ 3/3 Guardando...';
+                const radio = tipo === 'evento' ? 250 : 120; 
+                const hace45 = new Date(Date.now() - 45 * 60000).toISOString();
+                
+                const { data: ext } = await sb.from('reportes').select('*').eq('tipo', tipo).gte('created_at', hace45);
+                
+                let cercano = ext ? ext.find(r => calcularDistancia(corr.lat, corr.lng, r.lat, r.lng) < radio) : null;
+
+                if (cercano) {
+                    await sb.from('reportes').update({ confirmaciones: (cercano.confirmaciones || 0) + 1, lat: corr.lat, lng: corr.lng, created_at: new Date().toISOString() }).eq('id', cercano.id);
+                    alert("Reporte validado (+1 voto).");
+                } else {
+                    await sb.from('reportes').insert([{ lat: corr.lat, lng: corr.lng, tipo, confirmaciones: 1, created_at: new Date().toISOString() }]);
+                    alert("Reporte agregado.");
+                }
+                
+                cerrarModal();
+                cargarReportes();
+            }, () => { alert("Error GPS."); cerrarModal(); }, { timeout: 10000 });
+        }
+
+        async function votar(id, v) {
+            const { data } = await sb.from('reportes').select('confirmaciones').eq('id', id).single();
+            if (data) {
+                await sb.from('reportes').update({ confirmaciones: (data.confirmaciones || 0) + v }).eq('id', id);
+                cargarReportes(); 
+            }
+        }
+
+        async function marcarTerminado(id) {
+            if(confirm("¿Paso libre?")) {
+                await sb.from('reportes').delete().eq('id', id);
+                cargarReportes();
+            }
+        }
+
+        cargarReportes();
+        cargarCierresProgramados();
+        setInterval(() => { cargarReportes(); cargarCierresProgramados(); }, 120000); 
+    </script>
+</body>
+</html>
