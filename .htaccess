@@ -1,0 +1,2 @@
+Redirect /admin.html https://cierresviales.com/index.html?admin=true
+Redirect /admin https://cierresviales.com/index.html?admin=true
